@@ -8,5 +8,6 @@ dependencies = [
     "typer",
     "rich",
     "tomli-w",
-    "questionary"
+    "questionary",
+    "nuitka"
 ]
