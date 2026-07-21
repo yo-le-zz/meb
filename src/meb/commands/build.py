@@ -6,7 +6,89 @@ import tomllib
 from pathlib import Path
 from rich.console import Console
 
+from info import APP_AUTHOR, APP_GITHUB, APP_WEBSITE
+
 console = Console()
+
+VALID_SERVICE_TYPES = {"simple", "oneshot", "notify", "forking"}
+VALID_RESTART = {"no", "on-failure", "always", "on-abnormal"}
+
+
+def _build_unit_content(service: dict, app_name: str, description_fallback: str) -> str:
+    svc_type = service.get("type") or "simple"
+    if svc_type not in VALID_SERVICE_TYPES:
+        svc_type = "simple"
+
+    restart = service.get("restart") or "on-failure"
+    if restart not in VALID_RESTART:
+        restart = "on-failure"
+
+    user = service.get("user") or "root"
+    args = service.get("args") or ""
+    exec_start = f"/usr/bin/{app_name}" + (f" {args}" if args else "")
+    description = service.get("description") or description_fallback
+
+    lines = [
+        "[Unit]",
+        f"Description={description}",
+        "After=network.target",
+        "",
+        "[Service]",
+        f"Type={svc_type}",
+        f"ExecStart={exec_start}",
+        f"User={user}",
+        f"Restart={restart}",
+        "",
+        "[Install]",
+        "WantedBy=multi-user.target",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _write_services(build_root: Path, services: list[dict], app_name: str, description_fallback: str) -> list[str]:
+    """Écrit les fichiers .service dans DEBIAN et renvoie la liste des noms d'unités."""
+    if not services:
+        return []
+
+    systemd_dir = build_root / "usr" / "lib" / "systemd" / "system"
+    systemd_dir.mkdir(parents=True, exist_ok=True)
+
+    unit_names = []
+    for service in services:
+        name = service.get("name")
+        if not name:
+            continue
+        unit_name = f"{name}.service"
+        content = _build_unit_content(service, app_name, description_fallback)
+        (systemd_dir / unit_name).write_text(content, encoding="utf-8")
+        unit_names.append((unit_name, bool(service.get("enable", True))))
+
+    return unit_names
+
+
+def _write_maintainer_scripts(debian_dir: Path, unit_names: list[tuple]):
+    if not unit_names:
+        return
+
+    enable_lines = [
+        f"    systemctl enable --now {unit_name} >/dev/null 2>&1 || true"
+        for unit_name, enable in unit_names
+        if enable
+    ]
+    enable_block = ("\n" + "\n".join(enable_lines)) if enable_lines else ""
+
+    postinst = "#!/bin/sh\nset -e\n\nif command -v systemctl >/dev/null 2>&1; then\n    systemctl daemon-reload >/dev/null 2>&1 || true" + enable_block + "\nfi\n\nexit 0\n"
+
+    stop_lines = "\n".join(f"    systemctl stop {unit_name} >/dev/null 2>&1 || true\n    systemctl disable {unit_name} >/dev/null 2>&1 || true" for unit_name, _ in unit_names)
+    prerm = "#!/bin/sh\nset -e\n\nif command -v systemctl >/dev/null 2>&1; then\n" + stop_lines + "\nfi\n\nexit 0\n"
+
+    postrm = "#!/bin/sh\nset -e\n\nif command -v systemctl >/dev/null 2>&1; then\n    systemctl daemon-reload >/dev/null 2>&1 || true\nfi\n\nexit 0\n"
+
+    for filename, content in (("postinst", postinst), ("prerm", prerm), ("postrm", postrm)):
+        target = debian_dir / filename
+        target.write_text(content, encoding="utf-8")
+        target.chmod(target.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
 
 def run(path: str = ".", output: str = "dist"):
@@ -27,8 +109,9 @@ def run(path: str = ".", output: str = "dist"):
     app = config.get("app", {})
     exec_rel = app.get("exec")
     icon_rel = app.get("icon")
-    maintainer = config.get("maintainer", "unknown <unknown@example.com>")
+    maintainer = config.get("maintainer") or "unknown <unknown@example.com>"
     category = app.get("category", "Utility")
+    services = config.get("services", [])
 
     if not name or not exec_rel:
         console.print("[red]✘ Configuration incomplète (name / app.exec requis). Lance 'meb check'.[/red]")
@@ -92,6 +175,12 @@ Categories={category};
 """
     desktop_file.write_text(desktop_content, encoding="utf-8")
 
+    # Services systemd (optionnels)
+    unit_names = _write_services(build_root, services, name, description)
+    if unit_names:
+        _write_maintainer_scripts(debian_dir, unit_names)
+        console.print(f"[green]✔ {len(unit_names)} service(s) systemd empaqueté(s)[/green]")
+
     # DEBIAN/control
     installed_size_kb = max(1, dest_exec.stat().st_size // 1024)
     control_content = f"""Package: {name}
@@ -101,8 +190,11 @@ Priority: optional
 Architecture: {arch}
 Maintainer: {maintainer}
 Installed-Size: {installed_size_kb}
+Homepage: {APP_GITHUB}
 Description: {description}
 """
+    if unit_names:
+        control_content += "Depends: systemd\n"
     (debian_dir / "control").write_text(control_content, encoding="utf-8")
 
     # dpkg-deb
@@ -120,6 +212,7 @@ Description: {description}
         raise SystemExit(1)
 
     console.print(f"[green]✔ Paquet créé : {deb_path}[/green]")
+    console.print(f"[dim]Meb — par {APP_AUTHOR} · {APP_GITHUB} · {APP_WEBSITE}[/dim]")
 
 
 if __name__ == "__main__":

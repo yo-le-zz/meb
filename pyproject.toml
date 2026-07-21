@@ -4,6 +4,9 @@ version = "1.0.0"
 description = "Meb est un outils permettant de faire des .deb ( packages debians ) rapidemant et clairement avec differente commandes intuitive directement en CLI terminal."
 readme = "README.md"
 requires-python = ">=3.13"
+authors = [
+    { name = "yolezz" }
+]
 dependencies = [
     "typer",
     "rich",
@@ -11,3 +14,7 @@ dependencies = [
     "questionary",
     "nuitka"
 ]
+
+[project.urls]
+Homepage = "https://meb-cli.pages.dev"
+Repository = "https://github.com/yo-le-zz/meb"

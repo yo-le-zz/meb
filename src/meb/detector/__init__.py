@@ -5,6 +5,8 @@ from . import node as _node
 from . import rust as _rust
 from . import cpp as _cpp
 from . import system as _system
+from . import icons as _icons
+from . import executable as _executable
 
 PROJECT_FILES = {
     "python": ["pyproject.toml", "setup.py", "setup.cfg"],
@@ -41,3 +43,19 @@ def parse_project(project: Path, language: str) -> dict:
 
 def detect_architecture() -> str:
     return _system.get_debian_architecture()
+
+
+def detect_icon(project: Path, name: str) -> Path | None:
+    return _icons.detect_icon(project, name)
+
+
+def list_icons(project: Path) -> list[Path]:
+    return _icons.list_icons(project)
+
+
+def detect_executable(project: Path, language: str | None, name: str) -> Path | None:
+    return _executable.detect_executable(project, language, name)
+
+
+def detect_compiler(project: Path) -> str | None:
+    return _executable.detect_compiler(project)

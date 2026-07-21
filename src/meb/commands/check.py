@@ -57,6 +57,21 @@ def run(path: str = "."):
     if arch not in ("amd64", "arm64", "armhf", "i386"):
         warnings.append(f"Architecture inconnue ou non standard : {arch}")
 
+    services = config.get("services", [])
+    seen_names = set()
+    for svc in services:
+        svc_name = svc.get("name")
+        if not svc_name:
+            errors.append("Un service défini n'a pas de nom (services[].name)")
+            continue
+        if svc_name in seen_names:
+            errors.append(f"Nom de service en double : {svc_name}")
+        seen_names.add(svc_name)
+        if svc.get("type") not in (None, "simple", "oneshot", "notify", "forking"):
+            warnings.append(f"Type de service inconnu pour '{svc_name}' : {svc.get('type')}")
+    if services:
+        console.print(f"[green]✔ {len(services)} service(s) défini(s)[/green]")
+
     console.print("")
     if warnings:
         console.print("[yellow]Avertissements :[/yellow]")
