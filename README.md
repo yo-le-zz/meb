@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/icons/meb.svg" alt="Meb logo" width="120">
+  <img src="assets/icons/meb.png" alt="Meb logo" width="120">
 </p>
 
 <h1 align="center">Meb</h1>
