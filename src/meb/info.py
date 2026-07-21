@@ -1,0 +1,2 @@
+APP_NAME = "Meb"
+APP_VERSION = "1.0.0"
