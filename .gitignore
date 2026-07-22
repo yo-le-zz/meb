@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Meb build cache (ccache / uv, réutilisé entre les builds Docker)
+.build-cache/

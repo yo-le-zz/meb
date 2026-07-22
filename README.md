@@ -56,11 +56,27 @@ chmod +x scripts/build.sh
 
 `build.sh` compile Meb avec [Nuitka](https://nuitka.net) dans des conteneurs Docker (via QEMU) pour produire **amd64 et arm64** en une seule commande, puis assemble les deux `.deb` dans `dist/`.
 
+Le script est optimisé pour ne pas repartir de zéro à chaque exécution :
+
+- **Image de build persistante** (`scripts/Dockerfile.builder`) construite via `docker build` : grâce au cache de layers Docker, `apt-get`/`pip` ne sont réellement réexécutés que si le Dockerfile change — plus jamais à chaque run.
+- **Cache ccache et uv** montés depuis `.build-cache/` (ignoré par git) : le C déjà compilé et les paquets Python déjà téléchargés sont réutilisés d'un build à l'autre.
+- **`nuitka[onefile]`** (avec `zstandard`) pour un `--onefile` correctement compressé.
+- **Barres de progression Nuitka classiques** : le conteneur reçoit un vrai pseudo-TTY (`-t`) quand le terminal le permet.
+- **Ownership correct** : les fichiers créés dans le conteneur (`build/<arch>/`, caches) sont `chown` vers ton UID/GID hôte en fin de run — plus de `root:root` bloquant un `rm -rf`. Si tu lances `sudo ./scripts/build.sh` (pas nécessaire en temps normal si ton utilisateur est dans le groupe `docker`), le script détecte ton vrai utilisateur via `SUDO_UID`/`SUDO_GID` au lieu d'attribuer les fichiers à `root`.
+- **Nettoyage robuste avant chaque compilation** : `build/<arch>/` est supprimé via un conteneur (root) plutôt qu'un `rm -rf` côté hôte, qui échouerait silencieusement sur d'anciens fichiers `root:root` laissés par un run précédent — c'est exactement ce qui provoquait un `AssertionError` de Nuitka sur un `.c` déjà présent dans un dossier de build incohérent.
+- **Reprise intelligente** : une architecture déjà buildée (son `.deb` existe dans `dist/`) est sautée automatiquement ; en cas de timeout ou d'échec, le script continue sur les autres architectures puis résume à la fin.
+- **Pas de pygments inutile** : `typer.Typer(pretty_exceptions_enable=False)` + `--nofollow-import-to=pygments` empêchent Nuitka de compiler les ~500 modules de lexers de `pygments` (tirés par défaut via les tracebacks colorés de Typer/Rich) — un outil jamais utilisé par `meb` qui, à lui seul, pouvait faire passer un build de quelques minutes à plus d'1h30 sous QEMU.
+- **`--jobs`** réglable si la parallélisation sature la RAM de l'hôte sous émulation (par défaut : tous les cœurs vus par le conteneur).
+
+⚠️ Compiler en arm64 depuis une machine amd64 (ou l'inverse) passe par l'émulation QEMU, intrinsèquement plus lente que du natif (le C généré est traduit instruction par instruction). Ce n'est pas un bug du script : pour des builds arm64 rapides, un vrai matériel arm64 (Raspberry Pi, VM, runner CI arm64) reste la meilleure option.
+
 Prérequis : `docker` (avec support `--platform`) et QEMU enregistré pour l'émulation multi-arch :
 
 ```bash
 docker run --privileged --rm tonistiigi/binfmt --install all
 ```
+
+`build.sh` tente d'ailleurs cette installation automatiquement s'il détecte que l'émulation ne fonctionne pas.
 
 Options :
 
@@ -69,6 +85,10 @@ Options :
 ./scripts/build.sh --arch arm64     # ne compile que arm64
 ./scripts/build.sh --arch all       # amd64 + arm64 (défaut)
 ./scripts/build.sh --output out/    # dossier de sortie personnalisé
+./scripts/build.sh --force          # recompile même si un .deb existe déjà
+./scripts/build.sh --timeout 3600   # ajuste le délai max par architecture (secondes)
+./scripts/build.sh --no-cache       # reconstruit l'image et ignore les caches ccache/uv
+./scripts/build.sh --jobs 4         # limite la parallélisation (utile si RAM limitée sous QEMU)
 ```
 
 ## Commandes
