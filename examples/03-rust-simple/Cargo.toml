@@ -1,0 +1,5 @@
+[package]
+name = "rusthello"
+version = "0.3.2"
+description = "Exemple Rust minimal pour tester meb"
+edition = "2021"

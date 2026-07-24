@@ -1,0 +1,4 @@
+[project]
+name = "novaworker"
+version = "1.4.0"
+description = "Exemple complet démontrant toutes les sections avancées de meb"

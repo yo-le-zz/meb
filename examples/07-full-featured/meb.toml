@@ -1,0 +1,60 @@
+name = "novaworker"
+version = "1.4.0"
+description = "Exemple complet démontrant toutes les sections avancées de meb"
+language = "python"
+maintainer = "yolezz <yolezz@example.com>"
+
+[package]
+architecture = "amd64"
+section = "utils"
+priority = "optional"
+depends = ["python3 (>= 3.10)"]
+
+[app]
+icon = "icons"
+exec = "dist/novaworker"
+category = "Utility"
+desktop = true
+terminal = true
+startup_wm_class = ""
+readme = "README.md"
+
+[[resources]]
+source = "themes/dark"
+dest = "/usr/share/novaworker/themes/dark"
+
+[[resources]]
+source = "themes/light"
+dest = "/usr/share/novaworker/themes/light"
+
+[[man]]
+source = "docs/novaworker.1"
+section = 1
+
+[completions]
+bash = "auto"
+fish = "completions/novaworker.fish"
+
+[[conffiles]]
+source = "config/novaworker.conf"
+dest = "/etc/novaworker/novaworker.conf"
+
+[scripts]
+postinst = "scripts/postinst.sh"
+
+[[permissions]]
+path = "usr/bin/novaworker"
+mode = "0755"
+
+[[permissions]]
+path = "etc/novaworker/novaworker.conf"
+mode = "0644"
+
+[[services]]
+name = "novaworker"
+description = "Worker en arrière-plan de novaworker"
+args = "--worker"
+type = "simple"
+user = "root"
+restart = "on-failure"
+enable = true
