@@ -41,15 +41,28 @@ def build_base_config(project: Path) -> dict:
 
         "package": {
             "architecture": arch,
+            "section": "utils",
+            "priority": "optional",
+            "depends": [],
         },
 
         "app": {
             "icon": str(icon_path.relative_to(project)) if icon_path else "",
             "exec": str(exec_path.relative_to(project)) if exec_path else "",
             "category": "Utility",
+            "desktop": True,
+            "terminal": True,
+            "startup_wm_class": "",
+            "readme": "",
         },
 
         "services": [],
+        "resources": [],
+        "man": [],
+        "completions": {},
+        "conffiles": [],
+        "scripts": {},
+        "permissions": [],
     }
 
 

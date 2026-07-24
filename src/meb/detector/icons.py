@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ICON_EXTENSIONS = [".png", ".svg", ".ico", ".xpm"]
@@ -95,3 +96,121 @@ def list_icons(project: Path) -> list[Path]:
     candidates = _find_candidates(project)
     candidates.sort(key=_priority)
     return candidates
+
+
+def _size_from_path(path: Path) -> int | None:
+    """Cherche un indice de taille (ex: '256x256', 'icon-48.png') dans le
+    chemin ou le nom de fichier. Retourne le côté (carré supposé) en px."""
+    for part in (*path.parts, path.stem):
+        m = re.search(r"(\d{2,4})x\1", part)
+        if m:
+            return int(m.group(1))
+    m = re.search(r"[-_](\d{2,4})$", path.stem)
+    if m:
+        val = int(m.group(1))
+        if 8 <= val <= 1024:
+            return val
+    return None
+
+
+def _png_dimensions(path: Path) -> tuple[int, int] | None:
+    try:
+        with open(path, "rb") as f:
+            header = f.read(24)
+        if len(header) < 24 or header[:8] != b"\x89PNG\r\n\x1a\n":
+            return None
+        width = int.from_bytes(header[16:20], "big")
+        height = int.from_bytes(header[20:24], "big")
+        return (width, height)
+    except OSError:
+        return None
+
+
+def _ico_dimensions(path: Path) -> list[tuple[int, int]]:
+    """Un .ico peut embarquer plusieurs résolutions : renvoie toutes celles
+    déclarées dans le répertoire d'images (0 signifie 256 par convention)."""
+    sizes = []
+    try:
+        with open(path, "rb") as f:
+            header = f.read(6)
+            if len(header) < 6 or header[2:4] != b"\x01\x00":
+                return []
+            count = int.from_bytes(header[4:6], "little")
+            for i in range(min(count, 64)):
+                entry = f.read(16)
+                if len(entry) < 16:
+                    break
+                w = entry[0] or 256
+                h = entry[1] or 256
+                sizes.append((w, h))
+    except OSError:
+        return []
+    return sizes
+
+
+def detect_icon_dimensions(path: Path) -> list[int]:
+    """Retourne les tailles carrées (px) détectées pour un fichier icône
+    unique. Une liste vide signifie 'indéterminé' (SVG, ou lecture échouée)."""
+    hint = _size_from_path(path)
+    suffix = path.suffix.lower()
+
+    if suffix == ".png":
+        dims = _png_dimensions(path)
+        if dims:
+            return [dims[0]]
+        return [hint] if hint else []
+
+    if suffix == ".ico":
+        dims = _ico_dimensions(path)
+        if dims:
+            return sorted({w for w, h in dims})
+        return [hint] if hint else []
+
+    if suffix == ".svg":
+        return []  # vectoriel : va dans scalable/, pas dans une taille fixe
+
+    return [hint] if hint else []
+
+
+def detect_icon_set(icon_path: Path) -> dict:
+    """Résout un chemin d'icône (fichier ou dossier) en mapping
+    {'scalable' | '<n>x<n>': Path} prêt à installer dans hicolor/.
+
+    - Fichier SVG           -> {'scalable': path}
+    - Fichier PNG/ICO       -> taille lue dans les métadonnées de l'image
+                                (fallback 256x256 si indétectable)
+    - Dossier (déjà en forme hicolor, ex: 16x16/apps/x.png, ou plat avec
+      des noms/tailles variés) -> une entrée par fichier icône trouvé,
+      taille déduite du chemin puis des métadonnées de chaque fichier.
+    """
+    if icon_path.is_file():
+        if icon_path.suffix.lower() == ".svg":
+            return {"scalable": icon_path}
+        sizes = detect_icon_dimensions(icon_path)
+        if not sizes:
+            return {"256x256": icon_path}
+        # .ico multi-résolution : on ne peut pas extraire chaque sous-image
+        # sans lib de décodage image, donc on installe le fichier entier à
+        # la plus grande taille déclarée (la plus représentative).
+        return {f"{max(sizes)}x{max(sizes)}": icon_path}
+
+    if not icon_path.is_dir():
+        return {}
+
+    result: dict[str, Path] = {}
+    for f in icon_path.rglob("*"):
+        if not f.is_file() or f.suffix.lower() not in ICON_EXTENSIONS:
+            continue
+        if f.suffix.lower() == ".svg":
+            result.setdefault("scalable", f)
+            continue
+        size = _size_from_path(f)
+        if size is None:
+            dims = detect_icon_dimensions(f)
+            size = max(dims) if dims else 256
+        key = f"{size}x{size}"
+        # En cas de doublon sur une même taille, on garde le premier trouvé
+        # (les dossiers hicolor bien formés n'ont qu'un fichier par taille).
+        result.setdefault(key, f)
+
+    return result

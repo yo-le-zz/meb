@@ -43,8 +43,7 @@ wheels = [
 
 [[package]]
 name = "meb"
-version = "1.0.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "nuitka" },
     { name = "questionary" },
